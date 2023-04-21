@@ -4,12 +4,21 @@ from PyQt5.QtWidgets import QApplication, QMainWindow
 from PyQt5.QtCore import QThread, pyqtSignal
 from pyqtgraph import PlotWidget, plot
 import pyqtgraph as pg
+import numpy as np
 import random
 import time
 from time import sleep
 import threading
-# import Adafruit_BBIO.ADC as ADC
 import RPi.GPIO as GPIO
+# ADC Libraries
+import board
+import busio
+i2c = busio.I2C(board.SCL, board.SDA)
+time.sleep(1) # Lets i2c connection form?
+import adafruit_ads1x15.ads1115 as ADS
+from adafruit_ads1x15.analog_in import AnalogIn
+
+ads = ADS.ADS1115(i2c) # Create ADS object - I2C Enabled on board pi
  
 # Motor Variables
 DIR = 5
@@ -96,7 +105,14 @@ class Ui_MainWindow(QtWidgets.QMainWindow):
         self.motorButton2.clicked.connect(self.show)
         QtCore.QMetaObject.connectSlotsByName(self)
         self.motorButton2.clicked.connect(self.motorCCW)  # Connect button to motor run function
- 
+
+        # Save Data PushButton
+        self.dataButton = QtWidgets.QPushButton("Save Data", self.centralwidget)
+        self.dataButton.setGeometry(QtCore.QRect(525, 65, 150, 50))
+        self.dataButton.setObjectName("dataButton")
+        self.dataButton.clicked.connect(self.show)
+        QtCore.QMetaObject.connectSlotsByName(self)
+        self.dataButton.clicked.connect(self.dataSave)  # Connect button to dataSave function
  
  
  
@@ -159,6 +175,11 @@ class Ui_MainWindow(QtWidgets.QMainWindow):
             sleep(spd) # Dictates how fast stepper motor will run
         GPIO.cleanup
  
+    def dataSave(self):
+        txtsave = np.column_stack([self.flowRate,self.PDrop])
+        np.savetxt('RunData.txt', txtsave, fmt = ['%5.2f','%5.2f'])
+
+
     def retranslateUi(self):
  
         global data
@@ -183,17 +204,15 @@ class TimerThread(QThread):
     def run(self):
         global data
         FlowRateX = 1
-        # ADC.setup()
-
  
         while True:
             time.sleep(1)
 #           FlowRateX = 1
             FlowRateX +=1
-            #ADC.read("P9_37")
-            #ADC.read("P9_38")
-            Voltage1 = 3#ADC.read("P9_37") * 1.8
-            Voltage2 = 4#ADC.read("P9_38") * 1.8
+            chan1 = AnalogIn(ads, ADS.P0) # Pin 0 - A0
+            chan2 = AnalogIn(ads, ADS.P1) # Pin 1 - A1
+            Voltage1 = chan1.voltage * 1.8
+            Voltage2 = chan2.voltage * 1.8
             data["p_sensor_1"] = (((Voltage1-0.2)*30)/1.6)
             data["p_sensor_2"] =  0
             data["p_diff"] = data["p_sensor_1"] - data["p_sensor_2"]
