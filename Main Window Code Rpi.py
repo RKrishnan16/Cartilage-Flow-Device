@@ -27,7 +27,7 @@ STEP = 6
 CW = 1
 CCW = 0
 spd = .001
-ClampSteps = 10550 #Number of motor steps to clamp fully
+ClampSteps = 10850 #Number of motor steps to clamp fully
 
 # Motor Setup
 GPIO.setmode(GPIO.BCM)
@@ -62,6 +62,8 @@ global step
 global rate1cmd
 global rate2cmd
 global rate3cmd
+global RateNum
+RateNum = 0
 
 class Ui_MainWindow(QtWidgets.QMainWindow):
  
@@ -194,7 +196,7 @@ class Ui_MainWindow(QtWidgets.QMainWindow):
         self.stepTimeLabel = QtWidgets.QLabel(self.centralwidget)
         self.stepTimeLabel.setGeometry(QtCore.QRect(900, 50, 220, 20))
         self.stepTimeLabel.setObjectName("stepTimeLabel")
-        self.stepTimeLabel.setText("Step Time (sec):")
+        self.stepTimeLabel.setText("Step Time (min):")
  
         self.stepTime = QtWidgets.QSpinBox(self.centralwidget)
         self.stepTime.setObjectName("stepTime")
@@ -261,9 +263,10 @@ class Ui_MainWindow(QtWidgets.QMainWindow):
         self.PressureDiff.setFont(QtGui.QFont(font))
  
         self.PDrop = []
+        self.flowTime = []
         self.flowRate = []
- 
-        self.dataPlot = self.graphWidget.plot(self.flowRate, self.PDrop, pen=self.pen)
+
+        self.dataPlot = self.graphWidget.plot(self.flowTime, self.PDrop, pen=self.pen)
 
         self.timer_thread.start()
  
@@ -299,8 +302,8 @@ class Ui_MainWindow(QtWidgets.QMainWindow):
         GPIO.cleanup
  
     def dataSave(self):
-        txtsave = np.column_stack([self.flowRate,self.PDrop])
-        np.savetxt('RunData.txt', txtsave, fmt = ['%5.2f','%5.2f'])
+        txtsave = np.column_stack([self.flowTime,self.PDrop,self.flowRate])
+        np.savetxt('RunData.txt', txtsave, fmt = ['%5.2f','%5.2f','%5.2f'], delimiter = ' ')
 
     def motorGoHome(self):
         GPIO.output(DIR,CCW)
@@ -343,31 +346,40 @@ class Ui_MainWindow(QtWidgets.QMainWindow):
 
         units = self.flowUnits.currentText() # Units of flow rate #str
         step = self.stepTime.value() #int
-        rate1val = self.Rate1.text() #str
-        rate2val = self.Rate2.text() #str
-        rate3val = self.Rate3.text() #str
-        print([units,step,rate1val,rate2val,rate3val])
+        self.rate1val = self.Rate1.text() #str
+        self.rate2val = self.Rate2.text() #str
+        self.rate3val = self.Rate3.text() #str
+        print([units,step,self.rate1val,self.rate2val,self.rate3val])
         
         unitDict = {"mL/min":"MM", "mL/hr":"MH", "uL/min":"UM", "uL/hr":"UH"}
-        rate1cmd = '*RAT' + rate1val + unitDict[units] + '\x0D'
-        rate2cmd = '*RAT' + rate2val + unitDict[units] + '\x0D'
-        rate3cmd = '*RAT' + rate3val + unitDict[units] + '\x0D'
+        rate1cmd = '*RAT' + self.rate1val + unitDict[units] + '\x0D'
+        rate2cmd = '*RAT' + self.rate2val + unitDict[units] + '\x0D'
+        rate3cmd = '*RAT' + self.rate3val + unitDict[units] + '\x0D'
 
 
     def retranslateUi(self):
  
         global data
         global go
+        global RateNum
 
         self.PressureLabel1.setText(self._translate("MainWindow", f"Pressure Sensor 1: {data['p_sensor_1']}"))
         self.PressureLabel2.setText(self._translate("MainWindow", f"Pressure Sensor 2: {data['p_sensor_2']}"))
         self.PressureDiff.setText(self._translate("MainWindow", f"Pressure Drop = {data['p_diff']}"))
         
         if go:
-            self.flowRate.append(data["flow_rate"])
+            self.flowTime.append(data["flow_time"])
             self.PDrop.append(data["p_diff"])
- 
-            self.dataPlot.setData(self.flowRate, self.PDrop)
+            print(RateNum)
+
+            if RateNum == 1:
+                self.flowRate.append(float(self.rate1val))
+            elif RateNum ==2:
+                self.flowRate.append(float(self.rate2val))
+            elif RateNum ==3:
+                self.flowRate.append(float(self.rate3val))
+
+            self.dataPlot.setData(self.flowTime, self.PDrop)
  
  
  
@@ -379,12 +391,12 @@ class TimerThread(QThread):
  
     def run(self):
         global data
-        FlowRateX = 1
+        FlowTimeX = 1
  
         while True:
             time.sleep(1)
 #           FlowRateX = 1
-            FlowRateX +=1
+            FlowTimeX +=1
             chan1 = AnalogIn(ads, ADS.P0) # Pin 0 - A0
             chan2 = AnalogIn(ads, ADS.P1) # Pin 1 - A1
             Voltage1 = chan1.voltage
@@ -392,7 +404,7 @@ class TimerThread(QThread):
             data["p_sensor_1"] = (((Voltage1-0.2)*60)/1.6)
             data["p_sensor_2"] =  0
             data["p_diff"] = data["p_sensor_1"] - data["p_sensor_2"]
-            data["flow_rate"] = FlowRateX
+            data["flow_time"] = FlowTimeX
             self.update.emit()
 
 
@@ -407,31 +419,38 @@ class PumpThread(QThread): # Doesn't do anything yet
         global rate3cmd
 
     def run(self): # Executes to run the syringe pump
-        
+        global RateNum
+
         cmd_run = b'*RUN\x0D'
         cmd_stop = b'*STP\x0D'
-        run_time = step
+        run_time = step * 60
 
         # Rate 1
+        RateNum = 1
         ser.write(rate1cmd.encode()) # Send Rate 1
         sleep(1)
         ser.write(cmd_run) # Start running
         sleep(run_time) # Don't send anything for duration
         ser.write(cmd_stop)# Stop after the unit time
+        
 
         # Rate 2
         ser.write(rate2cmd.encode()) # Send Rate 2
+        RateNum = 2
         sleep(1)
         ser.write(cmd_run) # Start running
         sleep(run_time) # Don't send anything for duration
         ser.write(cmd_stop)# Stop after the unit time
+        
 
         # Rate 3
         ser.write(rate3cmd.encode()) # Send Rate 3
+        RateNum = 3
         sleep(1)
         ser.write(cmd_run) # Start running
         sleep(run_time) # Don't send anything for duration
         ser.write(cmd_stop)# Stop after the unit time
+        
 
 
 
