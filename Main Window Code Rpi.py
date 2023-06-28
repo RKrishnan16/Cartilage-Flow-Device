@@ -1,7 +1,7 @@
 import sys
 import serial
 from PyQt5 import QtCore, QtGui, QtWidgets
-from PyQt5.QtWidgets import QApplication, QMainWindow
+from PyQt5.QtWidgets import QApplication, QMainWindow, QMessageBox
 from PyQt5.QtCore import QThread, pyqtSignal
 from pyqtgraph import PlotWidget, plot
 import pyqtgraph as pg
@@ -27,7 +27,7 @@ STEP = 6
 CW = 1
 CCW = 0
 spd = .001
-ClampSteps = 10850 #Number of motor steps to clamp fully
+ClampSteps = 10860 #Number of motor steps to clamp fully
 
 # Motor Setup
 GPIO.setmode(GPIO.BCM)
@@ -59,6 +59,10 @@ global go
 go = False
 
 global step
+global rate1val
+global rate2val
+global rate3val
+
 global rate1cmd
 global rate2cmd
 global rate3cmd
@@ -73,6 +77,7 @@ class Ui_MainWindow(QtWidgets.QMainWindow):
         self.timer_thread = TimerThread()        
         self.timer_thread.update.connect(self.retranslateUi)
         self.pump_thread = PumpThread()
+
  
  
     def setupUi(self):
@@ -131,7 +136,7 @@ class Ui_MainWindow(QtWidgets.QMainWindow):
  
         # Motor Run CCW
         self.motorButton2 = QtWidgets.QPushButton("Motor Open", self.centralwidget)
-        self.motorButton2.setGeometry(QtCore.QRect(325, 65, 150, 50))
+        self.motorButton2.setGeometry(QtCore.QRect(160, 135, 150, 50))
         self.motorButton2.setObjectName("motorButton2")
         self.motorButton2.setCheckable(False)
         self.motorButton2.clicked.connect(self.show)
@@ -140,7 +145,7 @@ class Ui_MainWindow(QtWidgets.QMainWindow):
 
         # Motor Home Button
         self.motorHome = QtWidgets.QPushButton("Motor Home", self.centralwidget)
-        self.motorHome.setGeometry(QtCore.QRect(325, 135, 150, 50))
+        self.motorHome.setGeometry(QtCore.QRect(450, 135, 150, 50))
         self.motorHome.setObjectName("motorHome")
         self.motorHome.setCheckable(False)
  
@@ -150,7 +155,7 @@ class Ui_MainWindow(QtWidgets.QMainWindow):
         
         # Motor Clamp Button
         self.motorClamp = QtWidgets.QPushButton("Motor Clamp", self.centralwidget)
-        self.motorClamp.setGeometry(QtCore.QRect(160, 135, 150, 50))
+        self.motorClamp.setGeometry(QtCore.QRect(450, 65, 150, 50))
         self.motorClamp.setObjectName("motorClamp")
         self.motorClamp.setCheckable(False)
  
@@ -161,7 +166,7 @@ class Ui_MainWindow(QtWidgets.QMainWindow):
     # ---------------Misc Buttons --------------------    
         # Save Data PushButton
         self.dataButton = QtWidgets.QPushButton("Save Data", self.centralwidget)
-        self.dataButton.setGeometry(QtCore.QRect(525, 65, 150, 50))
+        self.dataButton.setGeometry(QtCore.QRect(625, 65, 150, 50))
         self.dataButton.setObjectName("dataButton")
         self.dataButton.clicked.connect(self.show)
         QtCore.QMetaObject.connectSlotsByName(self)
@@ -169,12 +174,14 @@ class Ui_MainWindow(QtWidgets.QMainWindow):
 
         # Run Start Button
         self.runStart = QtWidgets.QPushButton("Run Start", self.centralwidget)
-        self.runStart.setGeometry(QtCore.QRect(525, 135, 150, 50))
+        self.runStart.setGeometry(QtCore.QRect(625, 135, 150, 50))
         self.runStart.setObjectName("runStart")
         self.runStart.setCheckable(False)
         self.runStart.clicked.connect(self.show)
         QtCore.QMetaObject.connectSlotsByName(self)
         self.runStart.clicked.connect(self.startRun)
+
+        # Message Box for Motor Clamp Confirmation
 
     # ---------------Syringe Pump Buttons --------------------
         # Pump Label
@@ -269,7 +276,49 @@ class Ui_MainWindow(QtWidgets.QMainWindow):
         self.dataPlot = self.graphWidget.plot(self.flowTime, self.PDrop, pen=self.pen)
 
         self.timer_thread.start()
- 
+
+        # ----------------------- Timer Stuff -------------------------------------
+        self.counter = 0
+        self.minute = '00'
+        self.second = '00'
+        self.count = '00'
+        self.TimerLabel = QtWidgets.QLabel(self.centralwidget)
+        self.TimerLabel.setGeometry(QtCore.QRect(910, 385, 200, 50))
+        self.TimerLabel.setObjectName("TimerLabel")
+        self.timer = QtCore.QTimer(self)
+        self.timer.timeout.connect(self.showCounter)
+    
+    def showCounter(self):
+        
+        # Increment counter by 1
+        self.counter += 1
+
+        # Count and set the time counter value
+        cnt = int((self.counter/10 - int(self.counter/10))*10)
+        self.count = '0' + str(cnt)
+
+        # Set the second value
+        if int(self.counter/10) < 10 :
+            self.second = '0' + str(int(self.counter / 10))
+        else:
+            self.second = str(int(self.counter / 10))
+            # Set the minute value
+            if self.counter / 10 == 60.0 :
+                self.second == '00'
+                self.counter = 0
+                min = int(self.minute) + 1
+                if min < 10 :
+                    self.minute = '0' + str(min)
+                else:
+                    self.minute = str(min)
+
+        # Merge the mintue, second values
+        text = self.minute + ':' + self.second
+        # Display the stop watch values in the label
+        self.TimerLabel.setText('<h1 style="color:black">' + text + '</h1>')
+
+
+
     def motorCW(self):
  
         GPIO.output(DIR,CW)
@@ -319,49 +368,54 @@ class Ui_MainWindow(QtWidgets.QMainWindow):
         GPIO.cleanup
 
     def motorGoClose(self):
-        GPIO.output(DIR,CW)
+        # Popup Warning Box
+        ret = QMessageBox.warning(self, 'Motor Warning', "Motor will now clamp. Confirm position before proceeding.", QMessageBox.Ok | QMessageBox.Cancel)
+        if ret == QMessageBox.Ok:
+            GPIO.output(DIR,CW)
         # Run for 200 steps. This will change based on how you set you controller
-        for x in range(ClampSteps-1):
-            # Set one coil winding to high
-            GPIO.output(STEP,GPIO.HIGH)
-            # Allow it to get there.
-            sleep(spd) # Dictates how fast stepper motor will run
-            # Set coil winding to low
-            GPIO.output(STEP,GPIO.LOW)
-            sleep(spd) # Dictates how fast stepper motor will run
-        GPIO.cleanup
-    
+            for x in range(ClampSteps-1):
+                # Set one coil winding to high
+                GPIO.output(STEP,GPIO.HIGH)
+                # Allow it to get there.
+                sleep(spd) # Dictates how fast stepper motor will run
+                # Set coil winding to low
+                GPIO.output(STEP,GPIO.LOW)
+                sleep(spd) # Dictates how fast stepper motor will run
+            GPIO.cleanup
+
     def startRun(self):
         global go
         go = True
 
         self.pump_thread.start()
+        self.timer.start(100)
 
 
     def pumpSetup(self):
         global step
-        global rate1cmd
-        global rate2cmd
-        global rate3cmd
+        global rate1cmd ; global rate2cmd ; global rate3cmd
+        global rate1val ; global rate2val ; global rate3val
+        
 
         units = self.flowUnits.currentText() # Units of flow rate #str
         step = self.stepTime.value() #int
-        self.rate1val = self.Rate1.text() #str
-        self.rate2val = self.Rate2.text() #str
-        self.rate3val = self.Rate3.text() #str
-        print([units,step,self.rate1val,self.rate2val,self.rate3val])
+        rate1val = self.Rate1.text() #str
+        rate2val = self.Rate2.text() #str
+        rate3val = self.Rate3.text() #str
+        print([units,step,rate1val,rate2val,rate3val])
         
         unitDict = {"mL/min":"MM", "mL/hr":"MH", "uL/min":"UM", "uL/hr":"UH"}
-        rate1cmd = '*RAT' + self.rate1val + unitDict[units] + '\x0D'
-        rate2cmd = '*RAT' + self.rate2val + unitDict[units] + '\x0D'
-        rate3cmd = '*RAT' + self.rate3val + unitDict[units] + '\x0D'
+        rate1cmd = '*RAT' + rate1val + unitDict[units] + '\x0D'
+        rate2cmd = '*RAT' + rate2val + unitDict[units] + '\x0D'
+        rate3cmd = '*RAT' + rate3val + unitDict[units] + '\x0D'
 
 
     def retranslateUi(self):
- 
+        
         global data
         global go
         global RateNum
+        global rate1val ; global rate2val ; global rate3val
 
         self.PressureLabel1.setText(self._translate("MainWindow", f"Pressure Sensor 1: {data['p_sensor_1']}"))
         self.PressureLabel2.setText(self._translate("MainWindow", f"Pressure Sensor 2: {data['p_sensor_2']}"))
@@ -370,20 +424,20 @@ class Ui_MainWindow(QtWidgets.QMainWindow):
         if go:
             self.flowTime.append(data["flow_time"])
             self.PDrop.append(data["p_diff"])
-            print(RateNum)
+            print(rate1val)
 
             if RateNum == 1:
-                self.flowRate.append(float(self.rate1val))
+                self.flowRate.append(float(rate1val))
             elif RateNum ==2:
-                self.flowRate.append(float(self.rate2val))
+                self.flowRate.append(float(rate2val))
             elif RateNum ==3:
-                self.flowRate.append(float(self.rate3val))
+                self.flowRate.append(float(rate3val))
 
-            self.dataPlot.setData(self.flowTime, self.PDrop)
+            self.dataPlot.setData(self.flowTime, self.PDrop) # plots the actual data
  
  
  
-class TimerThread(QThread):
+class TimerThread(QThread, Ui_MainWindow):
     update = pyqtSignal()
  
     def __init__(self):
@@ -391,6 +445,9 @@ class TimerThread(QThread):
  
     def run(self):
         global data
+        global go
+        global rate1val ; global rate2val ; global rate3val
+        global RateNum
         FlowTimeX = 1
  
         while True:
@@ -407,8 +464,23 @@ class TimerThread(QThread):
             data["flow_time"] = FlowTimeX
             self.update.emit()
 
+            if RateNum == 1:
+                RateSave = float(rate1val)
+            elif RateNum ==2:
+                RateSave = float(rate2val)
+            elif RateNum ==3:
+                RateSave = float(rate3val)
 
-class PumpThread(QThread): # Doesn't do anything yet
+            if go:
+                AutoData = np.column_stack([data["flow_time"], data["p_diff"], RateSave])
+                f = open('AutoRunData.txt', 'a') # open file in append mode
+                np.savetxt(f, AutoData, fmt = ['%5.2f','%5.2f','%5.2f'], delimiter = ' ')
+                
+
+            
+
+
+class PumpThread(QThread):
     update = pyqtSignal()
  
     def __init__(self):
@@ -450,7 +522,6 @@ class PumpThread(QThread): # Doesn't do anything yet
         ser.write(cmd_run) # Start running
         sleep(run_time) # Don't send anything for duration
         ser.write(cmd_stop)# Stop after the unit time
-        
 
 
 
