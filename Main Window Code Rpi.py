@@ -424,7 +424,7 @@ class Ui_MainWindow(QtWidgets.QMainWindow):
         if go:
             self.flowTime.append(data["flow_time"])
             self.PDrop.append(data["p_diff"])
-            print(rate1val)
+            
 
             if RateNum == 1:
                 self.flowRate.append(float(rate1val))
@@ -492,6 +492,7 @@ class PumpThread(QThread):
 
     def run(self): # Executes to run the syringe pump
         global RateNum
+        global go
 
         cmd_run = b'*RUN\x0D'
         cmd_stop = b'*STP\x0D'
@@ -522,6 +523,8 @@ class PumpThread(QThread):
         ser.write(cmd_run) # Start running
         sleep(run_time) # Don't send anything for duration
         ser.write(cmd_stop)# Stop after the unit time
+        go = False
+
 
 
 
